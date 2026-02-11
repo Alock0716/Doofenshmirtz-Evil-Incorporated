@@ -1,4 +1,4 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBaseUrl = "http://localhost:5000"
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -6,7 +6,7 @@ type RequestOptions = {
 };
 
 async function requestJson<T>(pathValue: string, optionsValue: RequestOptions = {}): Promise<T> {
-  const urlValue = `${apiBaseUrl}${pathValue}`;
+  const urlValue = `${apiBaseUrl}`+`${pathValue}`;
 
   const responseValue = await fetch(urlValue, {
     method: optionsValue.method ?? "GET",

@@ -16,6 +16,8 @@ import {
   Spinner,
   Stack,
   Text,
+  AbsoluteCenter,
+  Center,
 } from "@chakra-ui/react";
 
 function negativeCheck(amountValue: number){
@@ -97,7 +99,7 @@ export default function Dashboard() {
   const netBadgeColor = useMemo(() => {
     if (netTone === "good") return { bg: "accent.500", color: "brand.900" };
     if (netTone === "warn") return { bg: "brand.100", color: "brand.700" };
-    if (netTone === "bad") return { bg: "brand.600", color: "white" };
+    if (netTone === "bad") return { bg: "negatives.400", color: "white" };
     return { bg: "blackAlpha.100", color: "brand.700" };
   }, [netTone]);
 
@@ -192,8 +194,8 @@ export default function Dashboard() {
             >
               <HStack justify="space-between" align="start">
                 <Box>
-                  <Text fontSize="sm" fontWeight={800} color="brand.600">
-                    Net
+                  <Text fontSize="sm" fontWeight={800} color="brand.400">
+                    Net Growth
                   </Text>
                   <Text
                     fontSize="2xl"
@@ -217,13 +219,44 @@ export default function Dashboard() {
               </HStack>
 
               <Text fontSize="sm" color={subtleText} mt={2}>
-                Income − Spending
+                Month-to-date
               </Text>
             </Box>
           </Grid>
 
           <Box h="1px" w="100%" bg="blackAlpha.100" my={6} />
 
+          {/* Spending by category (keeps your pie chart section + component) */}
+          
+          <Box
+            bg={cardBg}
+            borderWidth="1px"
+            borderColor={cardBorder}
+            borderRadius="18px"
+            p={{ base: 4, md: 5 }}
+            mb={6}
+            w="100%"
+          >
+            <HStack justify="space-between" mb={1}>
+              <Heading size="sm" color={strongText}>
+                Spending by Category
+              </Heading>
+              <Badge
+                bg="brand.100"
+                color="brand.700"
+                borderRadius="999px"
+                px={3}
+                py={1}
+              >
+                Month-to-date
+              </Badge>
+            </HStack>
+
+            <Center>
+              {/* keep your existing component so nothing breaks */}
+              <SpendingPieChart />
+            </Center>
+          </Box>
           {/* Recent transactions header (keeps link) */}
           <HStack justify="space-between" align="baseline" mb={3}>
             <Heading size="sm" color={strongText}>
@@ -241,38 +274,6 @@ export default function Dashboard() {
             </Link>
           </HStack>
 
-          {/* Spending by category (keeps your pie chart section + component) */}
-          <Box
-            bg={cardBg}
-            borderWidth="1px"
-            borderColor={cardBorder}
-            borderRadius="18px"
-            p={{ base: 4, md: 5 }}
-            mb={6}
-          >
-            <HStack justify="space-between" mb={1}>
-              <Heading size="sm" color={strongText}>
-                Spending by category
-              </Heading>
-              <Badge
-                bg="brand.100"
-                color="brand.700"
-                borderRadius="999px"
-                px={3}
-                py={1}
-              >
-                Month-to-date
-              </Badge>
-            </HStack>
-
-            <Text color={subtleText} fontSize="sm" mb={4}>
-              See where your money is going this month.
-            </Text>
-
-            {/* keep your existing component so nothing breaks */}
-            <SpendingPieChart />
-          </Box>
-
           {/* Transactions table (same data + columns, nicer container) */}
           <Box
             bg={cardBg}
@@ -287,7 +288,7 @@ export default function Dashboard() {
                 <Text color={subtleText}>Loading transactions…</Text>
               </HStack>
             ) : (
-              <Box overflowX="auto">
+              <Box overflowX="auto" p="20px">
                 <Box as="table" width="100%">
                   <Box as="thead">
                     <Box as="tr">
@@ -313,6 +314,7 @@ export default function Dashboard() {
                         key={row.transactionId}
                         color={subtleText}
                         _hover={{ bg: "blackAlpha.50" }}
+                        
                       >
                         <Box as="td" py={2}>
                           {formatDate(row.date)}

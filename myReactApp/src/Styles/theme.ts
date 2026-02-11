@@ -30,6 +30,7 @@ const config = defineConfig({
           300: { value: "#b8a3e5" },
           400: { value: "#a187d6" },
           500: { value: "#9282ba" }, // primary purple
+          550:{ value : "#7C69AF"},
           600: { value: "#6f65a0" }, // deep purple
           700: { value: "#565a62" }, // slate-ish (ties to your grey)
           800: { value: "#3b3f45" },

@@ -192,3 +192,18 @@ a:hover {
   background: rgba(31,35,39,0.06);
   border-radius: 999px;
 }
+
+.pieChartOuter {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+.pieChartInner {
+  width: 100%;
+  width: auto;  /* controls how big it can get */
+  height: 500px;     /* gives the canvas room */
+}
+
+.pieChartInner Pie{
+  object-fit:"cover"
+}

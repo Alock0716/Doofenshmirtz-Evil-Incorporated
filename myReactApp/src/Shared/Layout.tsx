@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
 
+  const bgc = "brand.500";
+  const tc = "accent.400";
+  const btnc = "brand.400";
+  const btnt = "brand.900"
+
 type LayoutProps = {
   activePage:
     | "dashboard"
@@ -35,8 +40,8 @@ function NavLink(navItem: NavItem) {
       borderRadius="md"
       fontSize="sm"
       fontWeight={800}
-      color={navItem.isActive ? "brand.600" : "textMuted"}
-      bg={navItem.isActive ? "rgba(146,130,186,0.14)" : "transparent"}
+      color={navItem.isActive ? "accent.400" : tc}
+      bg={navItem.isActive ? "brand.550" : bgc}
       _hover={{
         textDecoration: "none",
         bg: "rgba(93,200,155,0.14)",
@@ -60,12 +65,15 @@ export function TopNav(props: {activePage : String}) {
     { label: "Account", href: "/account", isActive: activePage === "account" },
   ];
 
+
+
+
   return (
     <Box
       position="sticky"
       top={0}
       zIndex={50}
-      bg="accent.300"
+      bg={bgc}
       borderBottomWidth="1px"
       borderColor="borderSubtle"
       boxShadow="sm"
@@ -78,17 +86,17 @@ export function TopNav(props: {activePage : String}) {
               w="44px"
               h="44px"
               borderRadius="lg"
-              bg="rgba(146,130,186,0.18)"
               borderWidth="1px"
               borderColor="rgba(111,101,160,0.35)"
               display="grid"
               placeItems="center"
               fontWeight={900}
-              color="brand.600"
+              color={tc}
+              bg = "brand.400"
               letterSpacing="0.5px"
               flexShrink={0}
             >
-              LOGO
+              DEI
             </Box>
 
             <Box lineHeight={1.1}>
@@ -128,13 +136,15 @@ export function TopNav(props: {activePage : String}) {
               borderRadius="md"
               size="sm"
               onClick={() => console.log("sync")}
+              color={btnt}
+              bg = {btnc}
             >
               Sync
             </Button>
 
             <Button
-              bg="brand.500"
-              color="white"
+              color={btnt}
+              bg = {btnc}
               _hover={{ bg: "brand.600" }}
               borderRadius="md"
               size="sm"
