@@ -23,7 +23,7 @@ function formatMoney(amountValue: number): string {
   }).format(amountValue);
 }
 
-export default function SpendingPieChart({timeFrame}: SpendingPieChartProps) {
+export default function SpendingPieChart({timeFrame, accountIdValue = "all"}: SpendingPieChartProps) {
   //function that ecports the chart component 
 
   //these variables store the data by row
@@ -36,9 +36,7 @@ export default function SpendingPieChart({timeFrame}: SpendingPieChartProps) {
       try {
         setErrorText("");
         const rowsValue = await apiClient.get<SpendingByCategoryRow[]>(
-          `/api/v1/dashboard/spending-by-category?timeFrame=${encodeURIComponent(
-            timeFrame,
-          )}`,
+          `/api/v1/dashboard/spending-by-category?timeFrame=${encodeURIComponent(timeFrame)}&accountId=${encodeURIComponent(accountIdValue)}`
         );
         setDataRows(rowsValue);
       } catch (errValue) {
@@ -51,7 +49,7 @@ export default function SpendingPieChart({timeFrame}: SpendingPieChartProps) {
     };
 
     void loadData();
-  }, [timeFrame]);
+  }, [timeFrame, accountIdValue]);
 
   //variables that store the pie chart configuration
   const chartData = useMemo(() => {

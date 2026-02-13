@@ -12,6 +12,8 @@ import { apiClient } from "../../Shared/apiClient";
 import type { DashboardSummary, TransactionRow, TimeFrameKey} from "../../Shared/types";
 import SpendingPieChart from "../../Shared/SpendingPieChart";
 import SpendingLineChart from "../../Shared/SpendingLineChart";
+import AccountsToggle from "../../Shared/AccountsToggle";
+import NetWorthCard from "../../Shared/NetWorthCard";
 import {
   Badge,
   Box,
@@ -76,6 +78,7 @@ export default function Dashboard() {
 
   //Time frame is how you adjust the time frame the page looks at for transactions
   const [timeFrameValue, setTimeFrameValue] = useState<TimeFrameKey>("mtd");
+  const [accountIdValue, setAccountIdValue] = useState<string>("all"); // "all" | "123"
 
   const timeFrameOptions: Array<{ keyValue: TimeFrameKey; labelValue: string }> =
     [
@@ -108,10 +111,10 @@ export default function Dashboard() {
   
   //this is how it sets the badge colors for the net growth card
   const netTone = useMemo(() => {
-    if (!summaryData) return "Nuetral";
-    if (summaryData.netTotal > 0) return "Positive";
-    if (summaryData.netTotal === 0) return "Negative";
-    return "bad";
+    if (!summaryData) return "Error";
+    else if (summaryData.netTotal > 0) return "Positive";
+    else if (summaryData.netTotal === 0) return "Neutral";
+    else return "Negative";
   }, [summaryData]);
 
   async function loadDashboardData(): Promise<void> {
@@ -121,13 +124,19 @@ export default function Dashboard() {
 
     try {
       // Try to call endpoints (can adjust these to reflect the full API once implemented)
+      const accountQueryValue =
+        accountIdValue && accountIdValue !== "all"
+          ? `&accountId=${encodeURIComponent(accountIdValue)}`
+          : "";
+
       const summaryValue = await apiClient.get<DashboardSummary>(
-        `/api/v1/dashboard/summary?timeFrame=${encodeURIComponent(timeFrameValue)}`,
+        `/api/v1/dashboard/summary?timeFrame=${encodeURIComponent(timeFrameValue)}${accountQueryValue}`,
       );
+
       const transactionsValue = await apiClient.get<TransactionRow[]>(
         `/api/v1/dashboard/recent-transactions?limit=8&timeFrame=${encodeURIComponent(
           timeFrameValue,
-        )}`,
+        )}${accountQueryValue}`,
       );
 
       setSummaryData(summaryValue);
@@ -143,7 +152,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     void loadDashboardData();
-  }, [timeFrameValue]);
+  }, [timeFrameValue, accountIdValue]);
 
   // These variables pull from our theme and represent color values for consistent stylization
   const pageBg = "brand.100";
@@ -156,9 +165,9 @@ export default function Dashboard() {
   //pulls from net tone value to set the color
   const netBadgeColor = useMemo(() => {
     if (netTone === "Positive") return { bg: "accent.500", color: "brand.900" };
-    if (netTone === "Nuetral") return { bg: "brand.100", color: "brand.700" };
-    if (netTone === "Negative") return { bg: "negatives.400", color: "white" };
-    return { bg: "blackAlpha.100", color: "brand.700" };
+    else if (netTone === "Neutral") return { bg: "brand.100", color: "brand.700" };
+    else if (netTone === "Negative") return { bg: "negatives.400", color: "white" };
+    else return { bg: "blackAlpha.100", color: "brand.700" };
   }, [netTone]);
 
   //This is the toggle button that is sued to switch the time frame on the page
@@ -181,15 +190,25 @@ export default function Dashboard() {
     <Layout activePage="dashboard">
       <Box bg={pageBg} minH="calc(100vh - 1px)">
         <Container maxW="6xl" py={{ base: 6, md: 10 }}>
-          //Page Header
+          {/*Page Header*/}
           <Stack gap={2} mb={6}>
-           <HStack justify="space-between" align="center">
+            <HStack justify="space-between" align="center" flexWrap="wrap" gap={3}>
               <Heading size="lg" color={strongText}>
                 Dashboard
               </Heading>
 
-              <Text color={subtleText}>Time-Frame Toggle:<span> </span>{timeFrameButton}</Text>
+              <HStack gap={3} flexWrap="wrap" justify="flex-end">
+                <AccountsToggle
+                  selectedAccountIdValue={accountIdValue}
+                  onChangeAccountIdValue={setAccountIdValue}
+                />
+
+                <Text color={subtleText}>
+                  Time-Frame Toggle:<span> </span>{timeFrameButton}
+                </Text>
+              </HStack>
             </HStack>
+
             
             <Text color={subtleText}>
               {summaryData
@@ -198,7 +217,7 @@ export default function Dashboard() {
             </Text>
           </Stack>
 
-          //Did the page load? ifTrue:ifFalse
+          {/*Did the page load? ifTrue:ifFalse*/}
           {errorText ? (
             <Box
               bg={cardBg}
@@ -225,8 +244,8 @@ export default function Dashboard() {
             </Box>
           ) : null}
 
-          //this holds the summary cards (income, spending, net)
-          <Grid templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }} gap={4}>
+          {/*this holds the summary cards (income, spending, net)*/}
+          <Grid templateColumns={{ base: "1fr", md: "repeat(4, 1fr)" }} gap={4}>
             <Box
               bg={cardBg}
               borderWidth="1px"
@@ -296,11 +315,13 @@ export default function Dashboard() {
 
               <Box mt={2}>{timeFrameButton}</Box>
             </Box>
+
+            <NetWorthCard />
           </Grid>
 
           <Box h="1px" w="100%" bg="blackAlpha.100" my={6} />
 
-          //Pie chart that shows spending based on categories
+          {/*Pie chart that shows spending based on categories*/}
           <Box
             bg={cardBg}
             borderWidth="1px"
@@ -319,11 +340,11 @@ export default function Dashboard() {
             </HStack>
 
             <Center>
-              <SpendingPieChart timeFrame={timeFrameValue}/>
+              <SpendingPieChart timeFrame={timeFrameValue} accountIdValue={accountIdValue} />
             </Center>
           </Box>
 
-          //Line/Bar Graph that shows the spending based on time
+          {/*Line/Bar Graph that shows the spending based on time*/}
           <Box
             bg={cardBg}
             borderWidth="1px"
@@ -334,17 +355,17 @@ export default function Dashboard() {
             w="100%"
           >
             <Center>
-              <SpendingLineChart timeFrameValue={timeFrameValue} />
+              <SpendingLineChart timeFrameValue={timeFrameValue} accountIdValue={accountIdValue} />
             </Center>
           </Box>
 
-          //Transaction table that shows the most recent transactions within the time frame set 
+          {/*Transaction table that shows the most recent transactions within the time frame set*/}
           <HStack justify="space-between" align="baseline" mb={3}>
             <Heading size="sm" color={strongText}>
               Recent transactions
             </Heading>
 
-            //link to full transactions page
+            {/*link to full transactions page*/}
             <Link
               href="/Transactions.html"
               color="brand.600"
@@ -369,7 +390,7 @@ export default function Dashboard() {
             ) : (
               <Box overflowX="auto" p="20px" >
                 <Box as="table" w="100%">
-                  //table header and column labels
+                  {/*table header and column labels*/}
                   <Box as="thead"  w='100%' bg="brand.200">
                     <Box as="tr">
                       <Box width='25%' as="th" className="headerBox">
@@ -387,7 +408,7 @@ export default function Dashboard() {
                     </Box>
                   </Box>
 
-                  //Table body with data pulled earlier
+                  {/*Table body with data pulled earlier*/}
                   <Box as="tbody" bg="brand.50">
                     {recentTransactions.map((row) => (
                       <Box
@@ -407,8 +428,8 @@ export default function Dashboard() {
                             {safeText(row.category)}
                           </Badge>
                         </Box>
-                        <Box textAlign="center" as="td" py={2} color={negativeCheck(row.amount)} fontWeight={800}>
-                          {formatMoney(row.amount)}
+                        <Box textAlign="center" as="td" py={2} color={negativeCheck(row.amount * -1)} fontWeight={800}>
+                          {formatMoney(row.amount * -1)}
                         </Box>
                       </Box>
                     ))}

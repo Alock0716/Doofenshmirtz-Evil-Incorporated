@@ -72,14 +72,48 @@ function getTimeFrameLabel(timeFrameValue) {
   return "Last 30 days";
 }
 
+function resolveAccountFilter(req, tableAliasValue = "t") {
+  //this function pulls in the table we are working with and the passed data to the route call and outputs the account filter for the SQL query along with some other useful bools
+  const accountIdRawValue = String(req.query.accountId ?? "").trim().toLowerCase();
+
+  // Treat these as "all accounts"
+  const isAllValue =
+    accountIdRawValue === "" ||
+    accountIdRawValue === "all" ||
+    accountIdRawValue === "null" ||
+    accountIdRawValue === "undefined" ||
+    accountIdRawValue === "-1";
+
+  if (isAllValue) {
+    return {
+      hasAccountFilterValue: false,
+      accountIdValue: null,
+      accountFilterSqlValue: "",
+      debugValue: { accountIdRawValue, isAllValue }
+    };
+  }
+
+  const parsedAccountIdValue = Number(accountIdRawValue);
+  const hasAccountFilterValue = Number.isFinite(parsedAccountIdValue) && parsedAccountIdValue >= 0;
+
+  return {
+    hasAccountFilterValue,
+    accountIdValue: hasAccountFilterValue ? parsedAccountIdValue : null,
+    accountFilterSqlValue: hasAccountFilterValue ? ` AND ${tableAliasValue}.account_id = ${parsedAccountIdValue}` : "",
+    debugValue: { accountIdRawValue, isAllValue, parsedAccountIdValue, hasAccountFilterValue }
+  };
+}
+
 /**
  * GET /api/v1/dashboard/summary?timeFrame=mtd|last7|last30|ytd|all
  */
 app.get("/api/v1/dashboard/summary", requireAuth, async (req, res) => {
   try {
+    const { hasAccountFilterValue, accountIdValue, accountFilterSqlValue, debugValue } =
+    resolveAccountFilter(req, "t");
+
     const timeFrameValue = resolveTimeFrameKey(req);
     const whereRangeValue = getTimeFrameWhereClause(timeFrameValue);
-    //const userIdValue  = 1;
 
     const sqlValue = `
       SELECT
@@ -90,7 +124,8 @@ app.get("/api/v1/dashboard/summary", requireAuth, async (req, res) => {
       JOIN plaid_items i ON a.item_id = i.id
       WHERE t.user_id = ?
         AND t.pending = 0
-        AND ${whereRangeValue};
+        AND ${whereRangeValue}
+        ${accountFilterSqlValue};;
     `;
 
 
@@ -117,6 +152,9 @@ app.get("/api/v1/dashboard/summary", requireAuth, async (req, res) => {
  */
 app.get("/api/v1/dashboard/recent-transactions", requireAuth, async (req, res) => {
   try {
+    const { hasAccountFilterValue, accountIdValue, accountFilterSqlValue, debugValue } =
+    resolveAccountFilter(req, "t");
+
     const timeFrameValue = resolveTimeFrameKey(req);
     const whereRangeValue = getTimeFrameWhereClause(timeFrameValue);
     const limitValue = Number(req.query.limit || 8);
@@ -137,6 +175,7 @@ app.get("/api/v1/dashboard/recent-transactions", requireAuth, async (req, res) =
       WHERE t.pending = 0
         AND ${whereRangeValue}
         AND t.user_id = ?
+        ${accountFilterSqlValue}
       ORDER BY t.datetime_posted DESC
       LIMIT ${limitValue};
     `;
@@ -167,6 +206,9 @@ app.get("/api/v1/dashboard/recent-transactions", requireAuth, async (req, res) =
  */
 app.get("/api/v1/dashboard/spending-by-category", requireAuth, async (req, res) => {
   try {
+    const { hasAccountFilterValue, accountIdValue, accountFilterSqlValue, debugValue } =
+    resolveAccountFilter(req, "t");
+
     const timeFrameValue = resolveTimeFrameKey(req);
     const whereRangeValue = getTimeFrameWhereClause(timeFrameValue);
 
@@ -183,6 +225,7 @@ app.get("/api/v1/dashboard/spending-by-category", requireAuth, async (req, res) 
         AND t.amount > 0
         AND ${whereRangeValue}
         AND t.user_id = ?
+        ${accountFilterSqlValue}
       GROUP BY category
       ORDER BY total DESC;
     `;
@@ -200,7 +243,6 @@ app.get("/api/v1/dashboard/spending-by-category", requireAuth, async (req, res) 
     res.status(500).json({ error: String(errValue) });
   }
 });
-
 
 //Auth Definitions
 function signToken(userIdValue, emailValue) {
@@ -296,6 +338,9 @@ app.post("/api/auth/login", async (req, res) => {
 /*GET /api/v1/dashboard/spending-trend?timeFrame=...*/  
 app.get("/api/v1/dashboard/spending-over-time", requireAuth, async (req, res) => {
   try {
+    const { hasAccountFilterValue, accountIdValue, accountFilterSqlValue, debugValue } =
+    resolveAccountFilter(req, "t");
+
     const timeFrameValue = resolveTimeFrameKey(req);
     const whereRangeValue = getTimeFrameWhereClause(timeFrameValue);
 
@@ -325,15 +370,16 @@ app.get("/api/v1/dashboard/spending-over-time", requireAuth, async (req, res) =>
     const sqlValue = `
       SELECT
         ${labelSqlValue} AS label,
-        COALESCE(SUM(t.amount), 0) AS amount
+        COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount ELSE 0 END), 0) AS spending,
+        COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) AS income
       FROM plaid_transactions t
       JOIN plaid_accounts a ON t.account_id = a.id
       JOIN plaid_items i ON a.item_id = i.id
       WHERE t.pending = 0
-        AND t.amount > 0
         AND ${whereRangeValue}
         ${lastTenYearsFilterValue}
         AND t.user_id = ?
+        ${accountFilterSqlValue}
       GROUP BY label
       ORDER BY ${orderSqlValue} ASC;
     `;
@@ -343,10 +389,12 @@ app.get("/api/v1/dashboard/spending-over-time", requireAuth, async (req, res) =>
     res.json({
       grouping: groupingValue,
       points: rowsValue.map((rowValue) => ({
-        label: String(rowValue.label instanceof Date
-          ? rowValue.label.toISOString().split("T")[0]
-          : String(rowValue.label),),
-        amount: Number(rowValue.amount),
+        label:
+          rowValue.label instanceof Date
+            ? rowValue.label.toISOString().split("T")[0]
+            : String(rowValue.label),
+        spending: Number(rowValue.spending),
+        income: Number(rowValue.income),
       })),
     });
   } catch (errValue) {
@@ -354,10 +402,100 @@ app.get("/api/v1/dashboard/spending-over-time", requireAuth, async (req, res) =>
   }
 });
 
+app.get("/api/v1/accounts", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+
+    const sqlValue = `
+      SELECT
+        id AS accountId,
+        COALESCE(official_name, name, 'Account') AS name,
+        mask,
+        type,
+        subtype
+      FROM plaid_accounts
+      WHERE user_id = ?
+      ORDER BY name ASC;
+    `;
+
+    const rowsValue = await runQuery(sqlValue, [userIdValue]);
+
+    res.json(
+      rowsValue.map((rowValue) => ({
+        accountId: Number(rowValue.accountId),
+        name: String(rowValue.name),
+        mask: rowValue.mask == null ? null : String(rowValue.mask),
+        type: rowValue.type == null ? null : String(rowValue.type),
+        subtype: rowValue.subtype == null ? null : String(rowValue.subtype),
+      })),
+    );
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
 
 
 app.get("/api/auth/me", requireAuth, async (req, res) => {
   return res.json({ user: req.user });
 });
+
+app.get("/api/v1/dashboard/net-worth", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+
+    const sqlValue = `
+      SELECT
+        a.id AS accountId,
+        COALESCE(a.official_name, a.name, 'Account') AS name,
+        a.type AS type,
+        a.subtype AS subtype,
+        a.mask AS mask,
+        COALESCE(a.account_balance) AS balance
+      FROM plaid_accounts a
+      WHERE a.user_id = ?
+      ORDER BY name ASC;
+    `;
+
+    const paramsValue = [userIdValue];
+   
+    const rowsValue = await runQuery(sqlValue, paramsValue);
+
+    const accountsValue = rowsValue.map((r) => {
+      const typeValue = String(r.type || "").toLowerCase();
+      const rawBalanceValue = Number(r.balance ?? 0);
+
+      const isLiabilityValue = typeValue === "credit" || typeValue === "loan";
+      const normalizedBalanceValue = Math.abs(rawBalanceValue);
+
+      return {
+        accountId: Number(r.accountId),
+        name: String(r.name),
+        mask: r.mask == null ? null : String(r.mask),
+        type: r.type == null ? null : String(r.type),
+        subtype: r.subtype == null ? null : String(r.subtype),
+        balance: Number(normalizedBalanceValue.toFixed(2)),
+        bucket: isLiabilityValue ? "liability" : "asset",
+      };
+    });
+
+    const assetsTotal = accountsValue
+      .filter((a) => a.bucket === "asset")
+      .reduce((sum, a) => sum + a.balance, 0);
+
+    const liabilitiesTotal = accountsValue
+      .filter((a) => a.bucket === "liability")
+      .reduce((sum, a) => sum + a.balance, 0);
+
+    res.json({
+      assetsTotal: Number(assetsTotal.toFixed(2)),
+      liabilitiesTotal: Number(liabilitiesTotal.toFixed(2)),
+      netWorth: Number((assetsTotal - liabilitiesTotal).toFixed(2)),
+      accounts: accountsValue,
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
 
 app.listen(portValue, () => console.log(`✅ API on http://localhost:${portValue}`));

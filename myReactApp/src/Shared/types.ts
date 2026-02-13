@@ -27,17 +27,19 @@ export type SpendingByCategoryRow = {
 
 export type SpendingPieChartProps = {
   timeFrame: string;
+  accountIdValue?: string;
 };
 
 export type TimeGrouping = "day" | "month" | "year";
 
 export type SpendingOverTimePoint = {
-  label: string; // "YYYY-MM-DD" | "YYYY-MM" | "YYYY"
-  amount: number;
+  label: string;
+  spending: number;
+  income: number;
 };
 
 export type SpendingOverTimeResponse = {
-  grouping: TimeGrouping;
+  grouping: TimeGrouping; // "day" | "month" | "year"
   points: SpendingOverTimePoint[];
 };
 
@@ -45,4 +47,5 @@ export type LineChartProps = {
   titleValue?: string;
   timeFrameValue: TimeFrameKey;
   lineColor?: string;
+  accountIdValue?: string;
 };

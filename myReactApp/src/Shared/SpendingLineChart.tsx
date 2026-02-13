@@ -130,26 +130,46 @@ function buildFullTimelineKeysValue(timeFrameValue: TimeFrameKey, groupingValue:
   return keysValue;
 }
 
-function normalizeSeriesToTimelineValue(rawPointsValue: SpendingOverTimePoint[], timelineKeysValue: string[]) {
-  //attaches the Key labels to the data points
-  const amountByKeyValue = new Map<string, number>();
+function normalizeSeriesToTimelineValue(
+  rawPointsValue: SpendingOverTimePoint[],
+  timelineKeysValue: string[],
+) {
+  const valueByKeyValue = new Map<string, { spending: number; income: number }>();
 
   for (const pointValue of rawPointsValue) {
-    amountByKeyValue.set(String(pointValue.label), Number(pointValue.amount ?? 0));
+    valueByKeyValue.set(String(pointValue.label), {
+      spending: Number(pointValue.spending ?? 0),
+      income: Number(pointValue.income ?? 0),
+    });
   }
 
-  return timelineKeysValue.map((keyValue) => ({
-    label: keyValue,
-    amount: Number((amountByKeyValue.get(keyValue) ?? 0).toFixed(2)),
-  }));
+  return timelineKeysValue.map((keyValue) => {
+    const foundValue = valueByKeyValue.get(keyValue);
+
+    const spendingValue = Number((foundValue?.spending ?? 0).toFixed(2));
+    const incomeValue = Number((foundValue?.income ?? 0).toFixed(2));
+
+    return {
+      label: keyValue,
+      spending: spendingValue,
+      income: incomeValue,
+    };
+  });
 }
 
 function buildCumulativePointsValue(pointsValue: SpendingOverTimePoint[]) {
-  //takes the spending values and cumulates them for the line graphs
-  let runningTotalValue = 0;
+  let runningSpendingTotalValue = 0;
+  let runningIncomeTotalValue = 0;
+
   return pointsValue.map((pointValue) => {
-    runningTotalValue += Number(pointValue.amount || 0);
-    return { ...pointValue, amount: Number(runningTotalValue.toFixed(2)) };
+    runningSpendingTotalValue += Number(pointValue.spending || 0);
+    runningIncomeTotalValue += Number(pointValue.income || 0);
+
+    return {
+      ...pointValue,
+      spending: Number(runningSpendingTotalValue.toFixed(2)),
+      income: Number(runningIncomeTotalValue.toFixed(2)),
+    };
   });
 }
 
@@ -170,7 +190,7 @@ function formatDisplayLabelValue(labelValue: string, groupingValue: TimeGrouping
   }
 }
 
-export default function SpendingLineChart({ titleValue = "Spending Over Time", timeFrameValue, lineColor="rgba(215, 40, 25, 0.65)"}: LineChartProps) {
+export default function SpendingLineChart({ titleValue = "Spending Over Time", timeFrameValue, accountIdValue = "all"}: LineChartProps) {
   //the linechart build
 
   //these variables are for the page loading handling
@@ -179,7 +199,7 @@ export default function SpendingLineChart({ titleValue = "Spending Over Time", t
 
   //Data values
   const [dataValue, setDataValue] = React.useState<SpendingOverTimeResponse | null>(null);
-
+  
   React.useEffect(() => {
     let isMountedValue = true;
 
@@ -230,22 +250,29 @@ export default function SpendingLineChart({ titleValue = "Spending Over Time", t
 
   //this variable stores the graph labels
   const labelsValue = pointsValue.map((p) => formatDisplayLabelValue(p.label, groupingValue));
-  //this variable stores the total values
-  const valuesValue = pointsValue.map((p) => p.amount);
+  //this variable stores the total values of income and spending for the time frame
+  const spendingValues = pointsValue.map((p) => p.spending);
+  const incomeValues = pointsValue.map((p) => p.income);
+
 
   //Chart Config Variables
   const chartDataValue = {
     labels: labelsValue,
     datasets: [
       {
-        label: isCumulativeValue ? "Cumulative Spending" : "Spending",
-        data: valuesValue,
-        borderWidth: 2,
+        label: "Spending",
+        data: spendingValues,
+        borderColor: "#e53e3e",
+        backgroundColor: "rgba(229, 62, 62, 0.2)",
         tension: 0.3,
-        pointRadius: isCumulativeValue ? 1.5 : 0, // bars don’t need points anyway
-        borderColor: lineColor,
-        backgroundColor: lineColor,
       },
+      {
+        label: "Income",
+        data: incomeValues,
+        borderColor: "#38a169",
+        backgroundColor: "rgba(56, 161, 105, 0.2)",
+        tension: 0.3,
+      }
     ],
   };
 
@@ -257,8 +284,10 @@ export default function SpendingLineChart({ titleValue = "Spending Over Time", t
       tooltip: {
         callbacks: {
           label: (ctxValue: any) => {
+            const datasetLabelValue = String(ctxValue?.dataset?.label ?? "");
             const numberValue = Number(ctxValue?.parsed?.y ?? ctxValue?.parsed ?? 0);
-            return `$${numberValue.toFixed(2)}`;
+
+            return `${datasetLabelValue}: $${numberValue.toFixed(2)}`;
           },
         },
       },
@@ -298,7 +327,7 @@ export default function SpendingLineChart({ titleValue = "Spending Over Time", t
         <Center><Heading size="lg">{titleValue}</Heading></Center>
       </Flex>
 
-      //loading check
+      {/*loading check*/}
       {isLoadingValue ? (
         <Flex align="center" justify="center" h="300px">
           <Spinner />
