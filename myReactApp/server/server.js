@@ -101,6 +101,101 @@ function resolveAccountFilter(req, tableAliasValue = "t") {
   };
 }
 
+function signToken(userIdValue, emailValue) {
+  return jwt.sign(
+    { userId: userIdValue, email: emailValue },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+  );
+}
+
+//Auth Routes
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const emailValue = String(req.body.email || "").trim().toLowerCase();
+    const passwordValue = String(req.body.password || "");
+
+    if (!emailValue || !passwordValue) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+
+    const existingRows = await runQuery(
+      `SELECT user_id FROM users WHERE email = ? LIMIT ${limitValue}`,
+      [emailValue]
+    );
+
+    if (existingRows.length) {
+      return res.status(409).json({ error: "Email already in use" });
+    }
+
+    const passwordHashValue = await bcrypt.hash(passwordValue, 12);
+
+    const insertSqlValue = `
+      INSERT INTO users (email, password_hash, created_at, updated_at)
+      VALUES (?, ?, NOW(), NOW())
+    `;
+    const insertResult = await runQuery(insertSqlValue, [
+      emailValue,
+      passwordHashValue,
+    ]);
+
+    const userIdValue = Number(insertResult.insertId);
+    const tokenValue = signToken(userIdValue, emailValue);
+
+    return res.status(201).json({
+      token: tokenValue,
+      user: { userId: userIdValue, email: emailValue },
+    });
+  } catch (errValue) {
+    return res.status(500).json({ error: String(errValue) });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const emailValue = String(req.body.email || "").trim().toLowerCase();
+    const passwordValue = String(req.body.password || "");
+
+    if (!emailValue || !passwordValue) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+
+    const rowsValue = await runQuery(
+      `SELECT user_id, email, password_hash FROM users WHERE email = ? LIMIT ${limitValue}`,
+      [emailValue]
+    );
+
+    if (!rowsValue.length) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const userRow = rowsValue[0];
+    const isValidValue = await bcrypt.compare(
+      passwordValue,
+      String(userRow.password_hash)
+    );
+
+    if (!isValidValue) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const userIdValue = Number(userRow.user_id);
+    const tokenValue = signToken(userIdValue, String(userRow.email));
+
+    return res.json({
+      token: tokenValue,
+      user: { userId: userIdValue, email: String(userRow.email) },
+    });
+  } catch (errValue) {
+    return res.status(500).json({ error: String(errValue) });
+  }
+});
+  
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  return res.json({ user: req.user });
+});
+
+//Dashboard Page Routes:
 /**
  * GET /api/v1/dashboard/summary?timeFrame=mtd|last7|last30|ytd|all
  */
@@ -241,96 +336,6 @@ app.get("/api/v1/dashboard/spending-by-category", requireAuth, async (req, res) 
   }
 });
 
-//Auth Definitions
-function signToken(userIdValue, emailValue) {
-  return jwt.sign(
-    { userId: userIdValue, email: emailValue },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-  );
-}
-
-app.post("/api/auth/register", async (req, res) => {
-  try {
-    const emailValue = String(req.body.email || "").trim().toLowerCase();
-    const passwordValue = String(req.body.password || "");
-
-    if (!emailValue || !passwordValue) {
-      return res.status(400).json({ error: "Email and password required" });
-    }
-
-    const existingRows = await runQuery(
-      `SELECT user_id FROM users WHERE email = ? LIMIT ${limitValue}`,
-      [emailValue]
-    );
-
-    if (existingRows.length) {
-      return res.status(409).json({ error: "Email already in use" });
-    }
-
-    const passwordHashValue = await bcrypt.hash(passwordValue, 12);
-
-    const insertSqlValue = `
-      INSERT INTO users (email, password_hash, created_at, updated_at)
-      VALUES (?, ?, NOW(), NOW())
-    `;
-    const insertResult = await runQuery(insertSqlValue, [
-      emailValue,
-      passwordHashValue,
-    ]);
-
-    const userIdValue = Number(insertResult.insertId);
-    const tokenValue = signToken(userIdValue, emailValue);
-
-    return res.status(201).json({
-      token: tokenValue,
-      user: { userId: userIdValue, email: emailValue },
-    });
-  } catch (errValue) {
-    return res.status(500).json({ error: String(errValue) });
-  }
-});
-
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const emailValue = String(req.body.email || "").trim().toLowerCase();
-    const passwordValue = String(req.body.password || "");
-
-    if (!emailValue || !passwordValue) {
-      return res.status(400).json({ error: "Email and password required" });
-    }
-
-    const rowsValue = await runQuery(
-      `SELECT user_id, email, password_hash FROM users WHERE email = ? LIMIT ${limitValue}`,
-      [emailValue]
-    );
-
-    if (!rowsValue.length) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    const userRow = rowsValue[0];
-    const isValidValue = await bcrypt.compare(
-      passwordValue,
-      String(userRow.password_hash)
-    );
-
-    if (!isValidValue) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    const userIdValue = Number(userRow.user_id);
-    const tokenValue = signToken(userIdValue, String(userRow.email));
-
-    return res.json({
-      token: tokenValue,
-      user: { userId: userIdValue, email: String(userRow.email) },
-    });
-  } catch (errValue) {
-    return res.status(500).json({ error: String(errValue) });
-  }
-});
-  
 /*GET /api/v1/dashboard/spending-trend?timeFrame=...*/  
 app.get("/api/v1/dashboard/spending-over-time", requireAuth, async (req, res) => {
   try {
@@ -428,10 +433,6 @@ app.get("/api/v1/accounts", requireAuth, async (req, res) => {
   } catch (errValue) {
     res.status(500).json({ error: String(errValue) });
   }
-});
-
-app.get("/api/auth/me", requireAuth, async (req, res) => {
-  return res.json({ user: req.user });
 });
 
 app.get("/api/v1/dashboard/net-worth", requireAuth, async (req, res) => {
@@ -721,4 +722,7 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
   }
 });
 
+//Budget Page Routes:
+
+//Localhosting call
 app.listen(portValue, () => console.log(`✅ API on http://localhost:${portValue}`));
