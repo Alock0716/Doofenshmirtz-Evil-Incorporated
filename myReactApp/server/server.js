@@ -502,7 +502,7 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
         b.name AS budgetName,
         b.period AS period
       FROM budgets b
-      WHERE b.user_id = ${userIdValue}
+      WHERE b.user_id = ?
         AND b.is_active = 1
       ORDER BY b.created_at DESC;
     `;
@@ -512,17 +512,16 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
     function getWindowPartsValue(periodRawValue) {
       const periodKeyValue = String(periodRawValue || "").toLowerCase().trim();
 
-      // start + end are MySQL expressions (end is exclusive)
       if (periodKeyValue === "weekly") {
         return {
           labelValue: "This week",
-          startExprValue: "DATE_SUB(NOW(), INTERVAL WEEKDAY(NOW()) DAY)",
+          startExprValue: "DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)",
           endExprValue:
-            "DATE_ADD(DATE_SUB(NOW(), INTERVAL WEEKDAY(NOW()) DAY), INTERVAL 7 DAY)",
+            "DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 7 DAY)",
         };
       }
 
-      else if (periodKeyValue === "biweekly") {
+      if (periodKeyValue === "biweekly") {
         return {
           labelValue: "Last 14 days",
           startExprValue: "DATE_SUB(NOW(), INTERVAL 14 DAY)",
@@ -530,19 +529,18 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
         };
       }
 
-      else if (periodKeyValue === "yearly" || periodKeyValue === "annual") {
+      if (periodKeyValue === "yearly" || periodKeyValue === "annual") {
         return {
           labelValue: "Year-to-date",
-          startExprValue: "DATE_FORMAT(NOW(), '%Y-01-01')",
-          endExprValue: "DATE_ADD(DATE_FORMAT(NOW(), '%Y-01-01'), INTERVAL 1 YEAR)",
+          startExprValue: "DATE_FORMAT(CURDATE(), '%Y-01-01')",
+          endExprValue: "DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-01-01'), INTERVAL 1 YEAR)",
         };
       }
 
-      // default: monthly
       return {
         labelValue: "Month-to-date",
-        startExprValue: "DATE_FORMAT(NOW(), '%Y-%m-01')",
-        endExprValue: "DATE_ADD(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 1 MONTH)",
+        startExprValue: "DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+        endExprValue: "DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)",
       };
     }
 
@@ -552,16 +550,13 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
       const budgetIdValue = Number(budgetRowValue.budgetId);
       const budgetNameValue = String(budgetRowValue.budgetName || "Budget");
       const periodValue = String(budgetRowValue.period || "monthly");
-
       const windowPartsValue = getWindowPartsValue(periodValue);
 
-      // Pull the computed window strings from MySQL so frontend displays the *exact* window being queried
       const windowSqlValue = `
         SELECT
           ${windowPartsValue.startExprValue} AS windowStart,
           ${windowPartsValue.endExprValue} AS windowEnd;
       `;
-      
       const windowRowsValue = await runQuery(windowSqlValue, []);
       const windowStartValue = String(windowRowsValue?.[0]?.windowStart ?? "");
       const windowEndValue = String(windowRowsValue?.[0]?.windowEnd ?? "");
@@ -582,26 +577,27 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
             SUM(normalized.spendAmount) AS spentAmount
           FROM (
             SELECT
-              CASE
-                /* if it's already a canonical enum, keep it */
-                WHEN pfc.primary_category REGEXP '^[A-Z_]+$' THEN pfc.primary_category
+             CASE
+              WHEN pfc.primary_category = 'UTILITIES' THEN 'RENT_AND_UTILITIES'
 
-                /* friendly -> canonical mappings */
-                WHEN LOWER(TRIM(pfc.primary_category)) = 'dining' OR 'groceries' THEN 'FOOD_AND_DRINK'
-                WHEN LOWER(TRIM(pfc.primary_category)) = 'gas' THEN 'TRANSPORTATION'
-                WHEN LOWER(TRIM(pfc.primary_category)) = 'shopping' THEN 'GENERAL_MERCHANDISE'
-                WHEN LOWER(TRIM(pfc.primary_category)) = 'utilities' THEN 'HOUSING'
-                WHEN LOWER(TRIM(pfc.primary_category)) = 'income' THEN 'INCOME'
+              WHEN pfc.primary_category REGEXP '^[A-Z_]+$' THEN pfc.primary_category
 
-                /* fallback */
-                ELSE 'UNCATEGORIZED'
-              END AS primaryCategoryKey,
-              ABS(t.amount) AS spendAmount
+              WHEN LOWER(TRIM(pfc.primary_category)) IN ('dining', 'groceries') THEN 'FOOD_AND_DRINK'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'gas' THEN 'TRANSPORTATION'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'shopping' THEN 'GENERAL_MERCHANDISE'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'utilities' THEN 'RENT_AND_UTILITIES'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'housing' THEN 'HOUSING'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'income' THEN 'INCOME'
+
+              ELSE 'UNCATEGORIZED'
+            END AS primaryCategoryKey,
+              t.amount AS spendAmount
             FROM plaid_transactions t
             LEFT JOIN plaid_transaction_pfc pfc
               ON pfc.transaction_id = t.id
-            WHERE t.user_id = ${userIdValue}
+            WHERE t.user_id = ?
               AND t.pending = 0
+              AND t.amount > 0
               AND t.datetime_posted >= ${windowPartsValue.startExprValue}
               AND t.datetime_posted < ${windowPartsValue.endExprValue}
           ) normalized
@@ -613,6 +609,92 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
       `;
 
       const itemRowsValue = await runQuery(itemsSqlValue, [userIdValue, budgetIdValue]);
+
+      const budgetCategoryKeysValue = itemRowsValue
+        .map((rValue) => String(rValue.plaidPrimaryCategory || "UNCATEGORIZED"))
+        .filter((kValue) => kValue.length > 0);
+
+      // If the budget already has OTHER, we use its budgeted amount
+      const otherRowFromBudgetValue =
+        itemRowsValue.find((rValue) => String(rValue.plaidPrimaryCategory) === "OTHER") ?? null;
+
+      const otherBudgetedAmountValue = otherRowFromBudgetValue
+        ? Number(otherRowFromBudgetValue.budgetedAmount ?? 0)
+        : 0;
+
+      // When computing "Other spent", exclude OTHER from the budget category exclusion list,
+      const excludeKeysForOtherValue = budgetCategoryKeysValue.filter((kValue) => kValue !== "OTHER");
+
+      // NOT IN clause 
+      const notInSqlValue =
+        excludeKeysForOtherValue.length > 0
+          ? `AND normalized.primaryCategoryKey NOT IN (${excludeKeysForOtherValue.map(() => "?").join(", ")})`
+          : "";
+
+      const otherSqlValue = `
+        SELECT
+          COALESCE(SUM(normalized.spendAmount), 0) AS otherSpentAmount
+        FROM (
+          SELECT
+            CASE
+              WHEN pfc.primary_category = 'UTILITIES' THEN 'RENT_AND_UTILITIES'
+
+              WHEN pfc.primary_category REGEXP '^[A-Z_]+$' THEN pfc.primary_category
+
+              WHEN LOWER(TRIM(pfc.primary_category)) IN ('dining', 'groceries') THEN 'FOOD_AND_DRINK'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'gas' THEN 'TRANSPORTATION'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'shopping' THEN 'GENERAL_MERCHANDISE'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'utilities' THEN 'RENT_AND_UTILITIES'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'housing' THEN 'HOUSING'
+              WHEN LOWER(TRIM(pfc.primary_category)) = 'income' THEN 'INCOME'
+
+              ELSE 'UNCATEGORIZED'
+            END AS primaryCategoryKey,
+
+            CASE
+              WHEN t.amount > 0 THEN t.amount
+              ELSE 0
+            END AS spendAmount
+          FROM plaid_transactions t
+          LEFT JOIN plaid_transaction_pfc pfc
+            ON pfc.transaction_id = t.id
+          WHERE t.user_id = ?
+            AND t.pending = 0
+            AND t.datetime_posted >= ${windowPartsValue.startExprValue}
+            AND t.datetime_posted < ${windowPartsValue.endExprValue}
+        ) normalized
+        WHERE normalized.spendAmount > 0
+          AND normalized.primaryCategoryKey NOT IN ('INCOME', 'TRANSFER_IN')
+          ${notInSqlValue};
+      `;
+
+      const otherParamsValue = [userIdValue, ...excludeKeysForOtherValue];
+      const otherRowsValue = await runQuery(otherSqlValue, otherParamsValue);
+      const otherSpentAmountValue = Number(otherRowsValue?.[0]?.otherSpentAmount ?? 0);
+
+      // Only add “Other” if it matters: either it has spend, or the budget includes an OTHER line
+      const shouldIncludeOtherValue = otherSpentAmountValue > 0 || Boolean(otherRowFromBudgetValue);
+
+      if (shouldIncludeOtherValue) {
+        // If the budget already has OTHER, avoid duplicating it:
+        // remove the existing OTHER row (we’ll re-add with computed spent)
+        const categoriesWithoutOtherValue = itemRowsValue.filter(
+          (rValue) => String(rValue.plaidPrimaryCategory) !== "OTHER",
+        );
+
+        itemRowsValue.length = 0;
+        itemRowsValue.push(...categoriesWithoutOtherValue);
+
+        // push the synthetic/merged OTHER row
+        itemRowsValue.push({
+          categoryId: otherRowFromBudgetValue ? Number(otherRowFromBudgetValue.categoryId) : -1,
+          categoryName: "Other",
+          plaidPrimaryCategory: "OTHER",
+          budgetedAmount: otherBudgetedAmountValue,
+          spentAmount: otherSpentAmountValue,
+        });
+      }
+
 
       responseBudgetsValue.push({
         budgetId: budgetIdValue,
@@ -626,7 +708,7 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
         categories: itemRowsValue.map((rValue) => ({
           categoryId: Number(rValue.categoryId),
           categoryName: String(rValue.categoryName || "Category"),
-          plaidPrimaryCategory: String(rValue.plaidPrimaryCategory || "Uncategorized"),
+          plaidPrimaryCategory: String(rValue.plaidPrimaryCategory || "UNCATEGORIZED"),
           budgetedAmount: Number(rValue.budgetedAmount || 0),
           spentAmount: Number(rValue.spentAmount || 0),
         })),
