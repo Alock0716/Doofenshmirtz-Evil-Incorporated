@@ -6,7 +6,6 @@
   Chart JS components.
   types from shared types file.
 */
-
 import React from "react";
 import { Bar, Line } from "react-chartjs-2";
 import { Box, Flex, Heading, Spinner, Text, Center } from "@chakra-ui/react";
@@ -23,6 +22,13 @@ import {
 } from "chart.js";
 import { apiClient } from "../Shared/apiClient"; // adjust path if needed
 import {SpendingOverTimeResponse, LineChartProps, TimeFrameKey, SpendingOverTimePoint, TimeGrouping} from "./types"
+import {
+  startOfDayValue,
+  addDaysValue,
+  formatDayKeyValue,
+  formatMonthKeyValue,
+  formatDisplayLabelValue,
+} from "./SharedFunctions";
 
 //Chart JS has you register the imports
 chartJsValue.register(
@@ -35,36 +41,6 @@ chartJsValue.register(
   Legend,
   Filler
 );
-
-
-function pad2Value(numValue: number) {
-  //if the value is not long enough it pads it with 0s
-  return String(numValue).padStart(2, "0");
-}
-
-function startOfDayValue(dateValue: Date) {
-  //sets the time value of the day passed to 0 to ensure that all data is recieved for that day not just from where it starts
-  const dValue = new Date(dateValue);
-  dValue.setHours(0, 0, 0, 0);
-  return dValue;
-}
-
-function addDaysValue(dateValue: Date, daysValue: number) {
-  //returns a date that is number "days" away from "date"
-  const dValue = new Date(dateValue);
-  dValue.setDate(dValue.getDate() + daysValue);
-  return dValue;
-}
-
-function formatDayKeyValue(dateValue: Date) {
-  //helper function to set the date format properly for days
-  return `${dateValue.getFullYear()}-${pad2Value(dateValue.getMonth() + 1)}-${pad2Value(dateValue.getDate())}`;
-}
-
-function formatMonthKeyValue(dateValue: Date) {
-  //helper function to set the date format properly for months
-  return `${dateValue.getFullYear()}-${pad2Value(dateValue.getMonth() + 1)}`;
-}
 
 function resolveTimeBoundsValue(timeFrameValue: TimeFrameKey) {
   //takes the time frame passed and returns the time range it coresponds to
@@ -171,23 +147,6 @@ function buildCumulativePointsValue(pointsValue: SpendingOverTimePoint[]) {
       income: Number(runningIncomeTotalValue.toFixed(2)),
     };
   });
-}
-
-function formatDisplayLabelValue(labelValue: string, groupingValue: TimeGrouping) {
-  //Format the dates in the keys to correct display format for each timeframe
-  try {
-    if (groupingValue === "day") {
-      const dValue = new Date(`${labelValue}T00:00:00`);
-      return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(dValue);
-    }
-    if (groupingValue === "month") {
-      const dValue = new Date(`${labelValue}-01T00:00:00`);
-      return new Intl.DateTimeFormat("en-US", { month: "short" }).format(dValue);
-    }
-    return labelValue;
-  } catch {
-    return labelValue;
-  }
 }
 
 export default function SpendingLineChart({ titleValue = "Spending Over Time", timeFrameValue, accountIdValue = "all"}: LineChartProps) {

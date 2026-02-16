@@ -22,6 +22,7 @@ app.use(
   })
 );
 
+//Route Functions:
 /**
  * Accept either:
  * - ?timeFrame=mtd|last7|last30|ytd|all
@@ -107,6 +108,116 @@ function signToken(userIdValue, emailValue) {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
+}
+
+/**
+ * Maps raw Plaid primary_category strings into the keys your budgets use.
+ * - Inputs: rawValue string
+ * - Output: normalized key string (ex: FOOD_AND_DRINK)
+ * - Purpose: stable matching between plaid_transaction_pfc and budget_categories
+ */
+function normalizePrimaryCategoryKey(rawValue) {
+  const v = String(rawValue || "").trim();
+
+  if (!v) return "UNCATEGORIZED";
+
+  // Match the same logic you used in budget-comparison
+  if (v === "UTILITIES") return "RENT_AND_UTILITIES";
+  if (/^[A-Z_]+$/.test(v)) return v;
+
+  const lowerValue = v.toLowerCase();
+
+  if (["dining", "groceries"].includes(lowerValue)) return "FOOD_AND_DRINK";
+  if (lowerValue === "gas") return "TRANSPORTATION";
+  if (lowerValue === "shopping") return "GENERAL_MERCHANDISE";
+  if (lowerValue === "utilities") return "RENT_AND_UTILITIES";
+  if (lowerValue === "housing") return "HOUSING";
+  if (lowerValue === "income") return "INCOME";
+
+  return "UNCATEGORIZED";
+}
+
+/**
+ * Builds a JS-based rolling window for a period + offset.
+ * - Inputs: periodKeyValue, offsetValue (0 = current, 1 = previous, etc.)
+ * - Output: { windowStartDateValue, windowEndDateValue, labelValue }
+ * - Purpose: history stats without needing a snapshot table yet
+ */
+function getBudgetWindowDates(periodKeyValue, offsetValue = 0) {
+  const nowValue = new Date();
+  const periodValue = String(periodKeyValue || "monthly").toLowerCase();
+
+  function startOfDay(d) {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  }
+
+  function addDays(d, days) {
+    const x = new Date(d);
+    x.setDate(x.getDate() + days);
+    return x;
+  }
+
+  function addMonths(d, months) {
+    const x = new Date(d);
+    x.setMonth(x.getMonth() + months);
+    return x;
+  }
+
+  function addYears(d, years) {
+    const x = new Date(d);
+    x.setFullYear(x.getFullYear() + years);
+    return x;
+  }
+
+  // Monday-start week
+  function startOfWeek(d) {
+    const x = startOfDay(d);
+    const dayValue = (x.getDay() + 6) % 7; // Monday=0
+    return addDays(x, -dayValue);
+  }
+
+  let windowStartDateValue;
+  let windowEndDateValue;
+
+  if (periodValue === "weekly") {
+    const baseStartValue = startOfWeek(nowValue);
+    windowStartDateValue = addDays(baseStartValue, -7 * offsetValue);
+    windowEndDateValue = addDays(windowStartDateValue, 7);
+  } else if (periodValue === "biweekly") {
+    // Rolling 14-day windows ending “now”
+    const baseEndValue = startOfDay(addDays(nowValue, 1));
+    windowEndDateValue = addDays(baseEndValue, -14 * offsetValue);
+    windowStartDateValue = addDays(windowEndDateValue, -14);
+  } else if (periodValue === "yearly" || periodValue === "annual") {
+    const yearValue = nowValue.getFullYear() - offsetValue;
+    windowStartDateValue = new Date(yearValue, 0, 1);
+    windowEndDateValue = new Date(yearValue + 1, 0, 1);
+  } else {
+    // monthly
+    const baseStartValue = new Date(nowValue.getFullYear(), nowValue.getMonth(), 1);
+    windowStartDateValue = addMonths(baseStartValue, -offsetValue);
+    windowEndDateValue = addMonths(windowStartDateValue, 1);
+  }
+
+  const labelValue =
+    offsetValue === 0 ? "Current period" : `${offsetValue} period(s) ago`;
+
+  // MySQL likes YYYY-MM-DD HH:mm:ss
+  function toMysqlDateTime(d) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return (
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+      `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    );
+  }
+
+  return {
+    labelValue,
+    windowStartValue: toMysqlDateTime(windowStartDateValue),
+    windowEndValue: toMysqlDateTime(windowEndDateValue),
+  };
 }
 
 //Auth Routes
@@ -723,6 +834,583 @@ app.get("/api/v1/dashboard/budget-comparison", requireAuth, async (req, res) => 
 });
 
 //Budget Page Routes:
+/**
+ * GET /api/v1/budgets
+ * Lists all budgets for the current user.
+ */
+app.get("/api/v1/budgets", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+
+    const sqlValue = `
+      SELECT
+        b.budget_id AS budgetId,
+        b.name,
+        b.period,
+        b.created_at AS createdAt,
+        b.is_active AS isActive
+      FROM budgets b
+      WHERE b.user_id = ?
+        AND b.is_active = 1
+      ORDER BY b.created_at DESC;
+    `;
+
+    const rowsValue = await runQuery(sqlValue, [userIdValue]);
+
+    res.json({
+      budgets: rowsValue.map((r) => ({
+        budgetId: Number(r.budgetId),
+        name: String(r.name || "Budget"),
+        period: String(r.period || "monthly").toLowerCase(),
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+        isActive: Number(r.isActive) ? 1 : 0,
+      })),
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * GET /api/v1/budgets/inactive
+ * Lists inactive budgets (soft-deleted / archived).
+ */
+app.get("/api/v1/budgets/inactive", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+
+    const sqlValue = `
+      SELECT
+        b.budget_id AS budgetId,
+        b.name,
+        b.period,
+        b.created_at AS createdAt,
+        b.is_active AS isActive
+      FROM budgets b
+      WHERE b.user_id = ?
+        AND b.is_active = 0
+      ORDER BY b.updated_at DESC, b.created_at DESC;
+    `;
+
+    const rowsValue = await runQuery(sqlValue, [userIdValue]);
+
+    res.json({
+      budgets: rowsValue.map((r) => ({
+        budgetId: Number(r.budgetId),
+        name: String(r.name || "Budget"),
+        period: String(r.period || "monthly").toLowerCase(),
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+        isActive: 0,
+      })),
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * POST /api/v1/budgets/:budgetId/restore
+ * Restores a soft-deleted budget.
+ */
+app.post("/api/v1/budgets/:budgetId/restore", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+    const budgetIdValue = Number(req.params.budgetId);
+
+    const sqlValue = `
+      UPDATE budgets
+      SET is_active = 1, updated_at = NOW()
+      WHERE budget_id = ? AND user_id = ?;
+    `;
+
+    const resultValue = await runQuery(sqlValue, [budgetIdValue, userIdValue]);
+
+    if (resultValue?.affectedRows === 0) return res.status(404).json({ error: "Budget not found" });
+
+    res.json({ ok: true });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+
+/**
+ * GET /api/v1/budgets/categories
+ * Provides dropdown options from budget_categories.
+ */
+app.get("/api/v1/budgets/categories", requireAuth, async (req, res) => {
+  try {
+    const sqlValue = `
+      SELECT
+        bc.category_id AS categoryId,
+        bc.display_name AS displayName,
+        bc.plaid_primary_category AS plaidPrimaryCategory
+      FROM budget_categories bc
+      ORDER BY bc.display_name ASC;
+    `;
+    const rowsValue = await runQuery(sqlValue, []);
+
+    res.json({
+      categories: rowsValue.map((r) => ({
+        categoryId: Number(r.categoryId),
+        displayName: String(r.displayName || "Category"),
+        plaidPrimaryCategory: String(r.plaidPrimaryCategory || "UNCATEGORIZED"),
+      })),
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * POST /api/v1/budgets
+ * Body: { name, period, incomeAmount?, items: [{ categoryId, amount }] }
+ * Inserts budgets row + budget_items rows.
+ */
+app.post("/api/v1/budgets", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+
+    const nameValue = String(req.body?.name || "").trim();
+    const periodValue = String(req.body?.period || "monthly").trim().toLowerCase();
+    const incomeAmountValue = req.body?.incomeAmount == null ? null : Number(req.body.incomeAmount);
+
+    const itemsValue = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    if (!nameValue) return res.status(400).json({ error: "Budget name required" });
+    if (!["weekly", "biweekly", "monthly", "yearly"].includes(periodValue)) {
+      return res.status(400).json({ error: "Invalid period" });
+    }
+
+    if (!itemsValue.length) return res.status(400).json({ error: "At least one category row required" });
+
+    // Insert budgets row
+    const insertBudgetSqlValue = `
+      INSERT INTO budgets (user_id, name, period, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 1, NOW(), NOW());
+    `;
+    const insertBudgetResValue = await runQuery(insertBudgetSqlValue, [userIdValue, nameValue, periodValue]);
+    const budgetIdValue = Number(insertBudgetResValue.insertId);
+
+    // Insert budget_items
+    const insertItemSqlValue = `
+      INSERT INTO budget_items (budget_id, category_id, amount, created_at, updated_at)
+      VALUES (?, ?, ?, NOW(), NOW());
+    `;
+
+    for (const rowValue of itemsValue) {
+      const categoryIdValue = Number(rowValue.categoryId);
+      const amountValue = Number(rowValue.amount);
+
+      if (!Number.isFinite(categoryIdValue) || categoryIdValue <= 0) continue;
+      if (!Number.isFinite(amountValue) || amountValue < 0) continue;
+
+      await runQuery(insertItemSqlValue, [budgetIdValue, categoryIdValue, Number(amountValue.toFixed(2))]);
+    }
+
+    // NOTE: incomeAmount is not stored unless you add a column.
+    // Keep it in the payload so the UI can evolve without breaking.
+    res.status(201).json({ ok: true, budgetId: budgetIdValue });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * GET /api/v1/budgets/:budgetId
+ * Returns current period category status + transactions grouped per category.
+ * Includes synthetic "Other" spending like you requested earlier.
+ */
+app.get("/api/v1/budgets/:budgetId", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+    const budgetIdValue = Number(req.params.budgetId);
+
+    if (!Number.isFinite(budgetIdValue)) {
+      return res.status(400).json({ error: "Invalid budgetId" });
+    }
+
+    // Fetch budget header
+    const budgetSqlValue = `
+      SELECT budget_id AS budgetId, name, period
+      FROM budgets
+      WHERE budget_id = ? AND user_id = ?
+      LIMIT 1;
+    `;
+    const budgetRowsValue = await runQuery(budgetSqlValue, [budgetIdValue, userIdValue]);
+
+    if (!budgetRowsValue.length) {
+      return res.status(404).json({ error: "Budget not found" });
+    }
+
+    const budgetRowValue = budgetRowsValue[0];
+    const periodValue = String(budgetRowValue.period || "monthly").toLowerCase();
+    const nameValue = String(budgetRowValue.name || "Budget");
+
+    // Current window
+    const windowMetaValue = getBudgetWindowDates(periodValue, 0);
+
+    // Pull budget items + spent by matching normalized category keys
+    const itemsSqlValue = `
+      SELECT
+        bi.category_id AS categoryId,
+        bc.display_name AS categoryName,
+        bc.plaid_primary_category AS plaidPrimaryCategory,
+        bi.amount AS budgetedAmount
+      FROM budget_items bi
+      JOIN budget_categories bc ON bc.category_id = bi.category_id
+      WHERE bi.budget_id = ?
+      ORDER BY bi.amount DESC, bc.display_name ASC;
+    `;
+    const itemRowsValue = await runQuery(itemsSqlValue, [budgetIdValue]);
+
+    const budgetCategoryKeysValue = itemRowsValue
+      .map((r) => String(r.plaidPrimaryCategory || "UNCATEGORIZED"))
+      .filter((k) => k.length > 0);
+
+    const excludeKeysForOtherValue = budgetCategoryKeysValue.filter((k) => k !== "OTHER");
+
+    // Pull all spending txns in window (we’ll group in JS for flexibility)
+    const txnSqlValue = `
+      SELECT
+        t.id AS transactionId,
+        DATE(t.datetime_posted) AS date,
+        COALESCE(t.merchant_name, t.name_legacy) AS name,
+        COALESCE(pfc.primary_category, 'UNCATEGORIZED') AS rawCategory,
+        t.amount AS amount
+      FROM plaid_transactions t
+      LEFT JOIN plaid_transaction_pfc pfc ON pfc.transaction_id = t.id
+      WHERE t.user_id = ?
+        AND t.pending = 0
+        AND t.amount > 0
+        AND t.datetime_posted >= ?
+        AND t.datetime_posted < ?
+      ORDER BY t.datetime_posted DESC;
+    `;
+    const txnRowsValue = await runQuery(txnSqlValue, [userIdValue, windowMetaValue.windowStartValue, windowMetaValue.windowEndValue]);
+
+    // Group spending by normalized key
+    const spentByKeyValue = {};
+    const txnsByKeyValue = {};
+
+    for (const t of txnRowsValue) {
+      const keyValue = normalizePrimaryCategoryKey(t.rawCategory);
+      const amountValue = Number(t.amount || 0);
+
+      spentByKeyValue[keyValue] = (spentByKeyValue[keyValue] || 0) + amountValue;
+
+      if (!txnsByKeyValue[keyValue]) txnsByKeyValue[keyValue] = [];
+      txnsByKeyValue[keyValue].push({
+        transactionId: String(t.transactionId),
+        date: t.date instanceof Date ? t.date.toISOString().split("T")[0] : String(t.date),
+        name: String(t.name || ""),
+        categoryKey: keyValue,
+        amount: Number(amountValue.toFixed(2)),
+      });
+    }
+
+    // Build category status list
+    const categoriesValue = itemRowsValue.map((r) => {
+      const keyValue = String(r.plaidPrimaryCategory || "UNCATEGORIZED");
+      const spentValue = Number(spentByKeyValue[keyValue] || 0);
+      const budgetedValue = Number(r.budgetedAmount || 0);
+      const remainingValue = Number((budgetedValue - spentValue).toFixed(2));
+
+      return {
+        categoryId: Number(r.categoryId),
+        categoryName: String(r.categoryName || "Category"),
+        plaidPrimaryCategory: keyValue,
+        budgetedAmount: Number(budgetedValue.toFixed(2)),
+        spentAmount: Number(spentValue.toFixed(2)),
+        remainingAmount: remainingValue,
+        isOver: budgetedValue > 0 ? spentValue > budgetedValue : spentValue > 0,
+      };
+    });
+
+    // Synthetic/merged OTHER logic
+    const hasOtherLineValue = categoriesValue.some((c) => c.plaidPrimaryCategory === "OTHER");
+    const otherBudgetedAmountValue = hasOtherLineValue
+      ? Number(categoriesValue.find((c) => c.plaidPrimaryCategory === "OTHER")?.budgetedAmount || 0)
+      : 0;
+
+    let otherSpentAmountValue = 0;
+
+    for (const key of Object.keys(spentByKeyValue)) {
+      if (key === "INCOME" || key === "TRANSFER_IN") continue;
+      if (excludeKeysForOtherValue.includes(key)) continue;
+      otherSpentAmountValue += Number(spentByKeyValue[key] || 0);
+    }
+
+    const shouldIncludeOtherValue = otherSpentAmountValue > 0 || hasOtherLineValue;
+
+    if (shouldIncludeOtherValue) {
+      // Remove existing OTHER so we don’t duplicate
+      const filteredValue = categoriesValue.filter((c) => c.plaidPrimaryCategory !== "OTHER");
+      categoriesValue.length = 0;
+      categoriesValue.push(...filteredValue);
+
+      categoriesValue.push({
+        categoryId: hasOtherLineValue ? Number(itemRowsValue.find((x) => String(x.plaidPrimaryCategory) === "OTHER")?.categoryId || -1) : -1,
+        categoryName: "Other",
+        plaidPrimaryCategory: "OTHER",
+        budgetedAmount: Number(otherBudgetedAmountValue.toFixed(2)),
+        spentAmount: Number(otherSpentAmountValue.toFixed(2)),
+        remainingAmount: Number((otherBudgetedAmountValue - otherSpentAmountValue).toFixed(2)),
+        isOver: otherBudgetedAmountValue > 0 ? otherSpentAmountValue > otherBudgetedAmountValue : otherSpentAmountValue > 0,
+      });
+
+      // Move “other” txns into OTHER bucket for UI
+      const otherTxnsValue = [];
+      for (const key of Object.keys(txnsByKeyValue)) {
+        if (key === "INCOME" || key === "TRANSFER_IN") continue;
+        if (excludeKeysForOtherValue.includes(key)) continue;
+        otherTxnsValue.push(...(txnsByKeyValue[key] || []));
+        delete txnsByKeyValue[key];
+      }
+      txnsByKeyValue["OTHER"] = otherTxnsValue;
+    }
+
+    const budgetedTotalValue = categoriesValue.reduce((s, c) => s + Number(c.budgetedAmount || 0), 0);
+    const spentTotalValue = categoriesValue.reduce((s, c) => s + Number(c.spentAmount || 0), 0);
+    const remainingTotalValue = Number((budgetedTotalValue - spentTotalValue).toFixed(2));
+    const percentUsedValue = budgetedTotalValue > 0 ? Number(((spentTotalValue / budgetedTotalValue) * 100).toFixed(2)) : 0;
+
+    const overCategoriesValue = categoriesValue.filter((c) => c.isOver);
+
+    res.json({
+      budgetId: budgetIdValue,
+      name: nameValue,
+      period: periodValue,
+      window: {
+        label: "Current period",
+        start: windowMetaValue.windowStartValue.slice(0, 10),
+        end: windowMetaValue.windowEndValue.slice(0, 10),
+      },
+      totals: {
+        budgetedTotal: Number(budgetedTotalValue.toFixed(2)),
+        spentTotal: Number(spentTotalValue.toFixed(2)),
+        remainingTotal: remainingTotalValue,
+        percentUsed: percentUsedValue,
+      },
+      categories: categoriesValue,
+      overCategories: overCategoriesValue,
+      transactionsByCategory: txnsByKeyValue,
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * GET /api/v1/budgets/:budgetId/history?limit=6
+ * Returns last N windows totals for “how well you followed the budget”.
+ */
+app.get("/api/v1/budgets/:budgetId/history", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+    const budgetIdValue = Number(req.params.budgetId);
+    const limitRawValue = Number(req.query.limit || 6);
+    const limitValue = Number.isFinite(limitRawValue) ? Math.max(1, Math.min(24, limitRawValue)) : 6;
+
+    const budgetSqlValue = `
+      SELECT budget_id AS budgetId, period
+      FROM budgets
+      WHERE budget_id = ? AND user_id = ?
+      LIMIT 1;
+    `;
+    const budgetRowsValue = await runQuery(budgetSqlValue, [budgetIdValue, userIdValue]);
+    if (!budgetRowsValue.length) return res.status(404).json({ error: "Budget not found" });
+
+    const periodValue = String(budgetRowsValue[0].period || "monthly").toLowerCase();
+
+    // Pre-fetch budgeted total once (history is totals-only)
+    const budgetedSqlValue = `
+      SELECT COALESCE(SUM(amount), 0) AS budgetedTotal
+      FROM budget_items
+      WHERE budget_id = ?;
+    `;
+    const budgetedRowsValue = await runQuery(budgetedSqlValue, [budgetIdValue]);
+    const budgetedTotalValue = Number(budgetedRowsValue?.[0]?.budgetedTotal || 0);
+
+    const pointsValue = [];
+
+    for (let i = 0; i < limitValue; i++) {
+      const w = getBudgetWindowDates(periodValue, i);
+
+      // Compute spent total for window (all spending, we’ll compare to budgeted total)
+      const spentSqlValue = `
+        SELECT COALESCE(SUM(t.amount), 0) AS spentTotal
+        FROM plaid_transactions t
+        WHERE t.user_id = ?
+          AND t.pending = 0
+          AND t.amount > 0
+          AND t.datetime_posted >= ?
+          AND t.datetime_posted < ?;
+      `;
+      const spentRowsValue = await runQuery(spentSqlValue, [userIdValue, w.windowStartValue, w.windowEndValue]);
+      const spentTotalValue = Number(spentRowsValue?.[0]?.spentTotal || 0);
+
+      const remainingTotalValue = Number((budgetedTotalValue - spentTotalValue).toFixed(2));
+      const percentUsedValue = budgetedTotalValue > 0 ? Number(((spentTotalValue / budgetedTotalValue) * 100).toFixed(2)) : 0;
+
+      pointsValue.push({
+        windowStart: w.windowStartValue.slice(0, 10),
+        windowEnd: w.windowEndValue.slice(0, 10),
+        label: w.labelValue,
+        budgetedTotal: Number(budgetedTotalValue.toFixed(2)),
+        spentTotal: Number(spentTotalValue.toFixed(2)),
+        remainingTotal: remainingTotalValue,
+        percentUsed: percentUsedValue,
+      });
+    }
+
+    res.json({
+      budgetId: budgetIdValue,
+      period: periodValue,
+      points: pointsValue,
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * GET /api/v1/budgets/:budgetId/edit
+ * - Returns budget header + item rows for editing
+ */
+app.get("/api/v1/budgets/:budgetId/edit", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+    const budgetIdValue = Number(req.params.budgetId);
+
+    const headerSqlValue = `
+      SELECT budget_id AS budgetId, name, period, is_active AS isActive
+      FROM budgets
+      WHERE budget_id = ? AND user_id = ?
+      LIMIT 1;
+    `;
+    const headerRowsValue = await runQuery(headerSqlValue, [budgetIdValue, userIdValue]);
+    if (!headerRowsValue.length) return res.status(404).json({ error: "Budget not found" });
+
+    const itemsSqlValue = `
+      SELECT
+        bi.category_id AS categoryId,
+        bc.display_name AS categoryName,
+        bc.plaid_primary_category AS plaidPrimaryCategory,
+        bi.amount AS amount
+      FROM budget_items bi
+      JOIN budget_categories bc ON bc.category_id = bi.category_id
+      WHERE bi.budget_id = ?
+      ORDER BY bc.display_name ASC;
+    `;
+    const itemRowsValue = await runQuery(itemsSqlValue, [budgetIdValue]);
+
+    res.json({
+      budget: {
+        budgetId: Number(headerRowsValue[0].budgetId),
+        name: String(headerRowsValue[0].name || ""),
+        period: String(headerRowsValue[0].period || "monthly").toLowerCase(),
+        isActive: Number(headerRowsValue[0].isActive) ? 1 : 0,
+      },
+      items: itemRowsValue.map((r) => ({
+        categoryId: Number(r.categoryId),
+        categoryName: String(r.categoryName || ""),
+        plaidPrimaryCategory: String(r.plaidPrimaryCategory || ""),
+        amount: Number(Number(r.amount || 0).toFixed(2)),
+      })),
+    });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * PUT /api/v1/budgets/:budgetId
+ * Body: { name, period, isActive, items: [{ categoryId, amount }] }
+ * - Updates budgets header
+ * - Replaces all budget_items for that budget
+ */
+app.put("/api/v1/budgets/:budgetId", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+    const budgetIdValue = Number(req.params.budgetId);
+
+    const nameValue = String(req.body?.name || "").trim();
+    const periodValue = String(req.body?.period || "monthly").trim().toLowerCase();
+    const isActiveValue = Number(req.body?.isActive ?? 1) ? 1 : 0;
+    const itemsValue = Array.isArray(req.body?.items) ? req.body.items : [];
+
+    if (!nameValue) return res.status(400).json({ error: "Budget name required" });
+    if (!["weekly", "biweekly", "monthly", "yearly"].includes(periodValue)) {
+      return res.status(400).json({ error: "Invalid period" });
+    }
+    if (!itemsValue.length) return res.status(400).json({ error: "At least one category row required" });
+
+    // Ensure budget belongs to user
+    const existsSqlValue = `SELECT budget_id FROM budgets WHERE budget_id = ? AND user_id = ? LIMIT 1;`;
+    const existsRowsValue = await runQuery(existsSqlValue, [budgetIdValue, userIdValue]);
+    if (!existsRowsValue.length) return res.status(404).json({ error: "Budget not found" });
+
+    // Update header
+    const updateSqlValue = `
+      UPDATE budgets
+      SET name = ?, period = ?, is_active = ?, updated_at = NOW()
+      WHERE budget_id = ? AND user_id = ?;
+    `;
+    await runQuery(updateSqlValue, [nameValue, periodValue, isActiveValue, budgetIdValue, userIdValue]);
+
+    // Replace items (simple + reliable)
+    const deleteItemsSqlValue = `DELETE FROM budget_items WHERE budget_id = ?;`;
+    await runQuery(deleteItemsSqlValue, [budgetIdValue]);
+
+    const insertItemSqlValue = `
+      INSERT INTO budget_items (budget_id, category_id, amount, created_at, updated_at)
+      VALUES (?, ?, ?, NOW(), NOW());
+    `;
+
+    const seenCategoryIdsValue = new Set();
+    for (const rowValue of itemsValue) {
+      const categoryIdValue = Number(rowValue.categoryId);
+      const amountValue = Number(rowValue.amount);
+
+      if (!Number.isFinite(categoryIdValue) || categoryIdValue <= 0) continue;
+      if (!Number.isFinite(amountValue) || amountValue < 0) continue;
+      if (seenCategoryIdsValue.has(categoryIdValue)) continue;
+
+      seenCategoryIdsValue.add(categoryIdValue);
+      await runQuery(insertItemSqlValue, [budgetIdValue, categoryIdValue, Number(amountValue.toFixed(2))]);
+    }
+
+    res.json({ ok: true });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
+
+/**
+ * DELETE /api/v1/budgets/:budgetId
+ * - Soft delete: sets is_active = 0
+ */
+app.delete("/api/v1/budgets/:budgetId", requireAuth, async (req, res) => {
+  try {
+    const userIdValue = req.user.userId;
+    const budgetIdValue = Number(req.params.budgetId);
+
+    const sqlValue = `
+      UPDATE budgets
+      SET is_active = 0, updated_at = NOW()
+      WHERE budget_id = ? AND user_id = ?;
+    `;
+    const resultValue = await runQuery(sqlValue, [budgetIdValue, userIdValue]);
+
+    // If your runQuery returns affectedRows, keep this check; otherwise safe to remove
+    if (resultValue?.affectedRows === 0) return res.status(404).json({ error: "Budget not found" });
+
+    res.json({ ok: true });
+  } catch (errValue) {
+    res.status(500).json({ error: String(errValue) });
+  }
+});
 
 //Localhosting call
 app.listen(portValue, () => console.log(`✅ API on http://localhost:${portValue}`));

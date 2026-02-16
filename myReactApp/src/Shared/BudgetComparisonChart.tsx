@@ -20,6 +20,8 @@ import {
   Badge,
 } from "@chakra-ui/react";
 import { apiClient } from "../Shared/apiClient";
+import { formatMoney, safeText, getAmountToneColor } from "./SharedFunctions";
+
 
 chartJsValue.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
@@ -42,13 +44,6 @@ type BudgetCompare = {
 type BudgetComparisonResponse = {
   budgets: BudgetCompare[];
 };
-
-function formatMoney(amountValue: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amountValue);
-}
 
 export default function BudgetComparisonChart() {
   const [isLoadingValue, setIsLoadingValue] = React.useState<boolean>(true);

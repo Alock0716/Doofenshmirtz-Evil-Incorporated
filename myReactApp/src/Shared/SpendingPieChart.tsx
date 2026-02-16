@@ -11,17 +11,10 @@ import { Pie } from "react-chartjs-2";
 import { Chart as ChartJs, ArcElement, Tooltip, Legend } from "chart.js";
 import { apiClient } from "./apiClient";
 import type {SpendingByCategoryRow, SpendingPieChartProps} from "./types";
+import { formatMoney, safeText, getAmountToneColor } from "./SharedFunctions";
 
 //chart js requires registering imports
 ChartJs.register(ArcElement, Tooltip, Legend);
-
-function formatMoney(amountValue: number): string {
-  //numeric format helper for currency values
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amountValue);
-}
 
 export default function SpendingPieChart({timeFrame, accountIdValue = "all"}: SpendingPieChartProps) {
   //function that ecports the chart component 

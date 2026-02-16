@@ -1,41 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "./apiClient";
 import { Box, HStack, Input, Spinner, Stack, Text } from "@chakra-ui/react";
-
-type NetWorthAccountRow = {
-  accountId: number;
-  name: string;
-  mask: string | null;
-  type: string | null;
-  subtype: string | null;
-  balance: number;
-  bucket: "asset" | "liability";
-};
-
-type NetWorthResponse = {
-  assetsTotal: number;
-  liabilitiesTotal: number;
-  netWorth: number;
-  accounts: NetWorthAccountRow[];
-  warning?: string;
-  meta?: {
-    usedBalanceColumn?: string;
-    accountIdFilterApplied?: boolean;
-  };
-};
-
-function formatMoney(amountValue: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amountValue);
-}
-
-function parseMoneyInput(valueValue: string) {
-  const cleanedValue = valueValue.replace(/[^0-9.-]/g, "");
-  const parsedValue = Number(cleanedValue);
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
-}
+import { formatMoney, parseMoneyInput } from "./SharedFunctions";
+import {NetWorthResponse} from "./types"
 
 export default function NetWorthCard({ accountIdValue = "all" }: { accountIdValue?: string }) {
   const [dataValue, setDataValue] = useState<NetWorthResponse | null>(null);

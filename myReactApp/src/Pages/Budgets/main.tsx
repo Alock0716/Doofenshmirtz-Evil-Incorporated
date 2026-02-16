@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "../../index.css";
+import "../../Styles/index.css";
+import {system} from "../../Styles/theme"
+import { ChakraProvider } from "@chakra-ui/react";
 import Budgets from "./Budgets";
 
 const rootElement = document.getElementById("root");
@@ -11,6 +13,8 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <Budgets />
+    <ChakraProvider value={system}>
+      <Budgets />
+    </ChakraProvider>
   </React.StrictMode>
 );

@@ -33,38 +33,7 @@ import {
   AbsoluteCenter,
   Center,
 } from "@chakra-ui/react";
-
-function negativeCheck(amountValue: number){
-  //This function Checks for negative values in displayed numbers to make them appear as red/green text 
-  // by returning the proper color code from the imported theme pages
-  if (amountValue>=0){
-    return "accent.400";
-  }
-  else{
-    return "negatives.400";
-  }
-}
-
-function formatMoney(amountValue: number): string {
-  //Helper function to Format values in the proper Style for currency
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amountValue);
-}
-
-function formatDate(dateValue: string): string {
-  //converts plaid date strings into date values for better format options and logic
-  // expects yyyy-mm-dd; if you store it as an ISO, slice it before sending here
-  //can adjust this func to handle iso automatically if so desired (prob for better)
-  return dateValue;
-}
-
-function safeText(textValue: string): string {
-  //String Cleaner helper function
-  const cleanValue = (textValue ?? "").trim();
-  return cleanValue.length ? cleanValue : "—";
-}
+import { formatDate, negativeCheck, formatMoney, safeText, getAmountToneColor } from "../../Shared/SharedFunctions";
 
 export default function Dashboard() {
   //Default dashboard funciton that exports the page layout itself (the Main())
