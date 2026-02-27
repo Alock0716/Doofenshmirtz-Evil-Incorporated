@@ -940,15 +940,20 @@ app.post("/api/v1/budgets/:budgetId/restore", requireAuth, async (req, res) => {
  */
 app.get("/api/v1/budgets/categories", requireAuth, async (req, res) => {
   try {
+    const userIdValue = req.user.userId;
+
     const sqlValue = `
       SELECT
         bc.category_id AS categoryId,
         bc.display_name AS displayName,
         bc.plaid_primary_category AS plaidPrimaryCategory
       FROM budget_categories bc
+      WHERE
+       user_id = ?
       ORDER BY bc.display_name ASC;
     `;
-    const rowsValue = await runQuery(sqlValue, []);
+
+    const rowsValue = await runQuery(sqlValue, [userIdValue]);
 
     res.json({
       categories: rowsValue.map((r) => ({

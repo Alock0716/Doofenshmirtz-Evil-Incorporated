@@ -2,7 +2,9 @@
 //Need to merge this and other versions carefully as this file will be built out simultaneously
 
 // NOTE: keep this centralized so pages can call your backend regardless of where the frontend is hosted.
-const apiBaseUrl = "http://localhost:5000";
+const apiBaseUrl =  "https://DEIncAPIServer-env.eba-x7wwwg3h.us-east-2.elasticbeanstalk.com";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const apiBaseUrlAlt = "http://localhost:5000";
 
 function getAuthHeader() {
   // Authentication check
