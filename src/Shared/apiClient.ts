@@ -2,7 +2,7 @@
 //Need to merge this and other versions carefully as this file will be built out simultaneously
 
 // NOTE: keep this centralized so pages can call your backend regardless of where the frontend is hosted.
-const apiBaseUrl =  "http://deiapi-env.eba-byrpiycu.us-east-2.elasticbeanstalk.com";
+const apiBaseUrl =  import.meta.env.VITE_API_BASE_URL;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const apiBaseUrlAlt = "http://localhost:5000";  
 
