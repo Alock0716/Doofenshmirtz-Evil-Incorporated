@@ -1,3 +1,4 @@
+/* eslint-disable no-unsafe-finally */
 import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "./apiClient";
 import {

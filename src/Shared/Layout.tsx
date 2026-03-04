@@ -1,29 +1,24 @@
+// src/Shared/Layout.tsx
 import type { ReactNode } from "react";
+import { Box, Button, Container, Flex, HStack, Link, Text } from "@chakra-ui/react";
 
-  const bgc = "brand.500";
-  const tc = "accent.400";
-  const btnc = "brand.400";
-  const btnt = "brand.900"
+/** Controls which top nav item appears active */
+export type ActivePageKey =
+  | "dashboard"
+  | "budgets"
+  | "transactions"
+  | "analytics"
+  | "account";
 
 type LayoutProps = {
-  activePage:
-    | "dashboard"
-    | "budgets"
-    | "transactions"
-    | "analytics"
-    | "accounts";
+  activePage: ActivePageKey;
   children: ReactNode;
 };
 
-import {
-  Box,
-  Button,
-  Container,
-  Flex,
-  HStack,
-  Link,
-  Text,
-} from "@chakra-ui/react";
+const bgc = "brand.500";
+const tc = "accent.400";
+const btnc = "brand.400";
+const btnt = "brand.900";
 
 type NavItem = {
   label: string;
@@ -54,7 +49,7 @@ function NavLink(navItem: NavItem) {
   );
 }
 
-export function TopNav(props: {activePage : string}) {
+export function TopNav(props: { activePage: ActivePageKey }) {
   const { activePage } = props;
 
   const navItems: NavItem[] = [
@@ -62,11 +57,8 @@ export function TopNav(props: {activePage : string}) {
     { label: "Budgets", href: "/budgets", isActive: activePage === "budgets" },
     { label: "Transactions", href: "/transactions", isActive: activePage === "transactions" },
     { label: "Analytics", href: "/analytics", isActive: activePage === "analytics" },
-    { label: "Account", href: "/account", isActive: activePage === "account" },
+    { label: "Account", href: "/account", isActive: activePage === "account" }, // ✅ singular
   ];
-
-
-
 
   return (
     <Box
@@ -80,7 +72,6 @@ export function TopNav(props: {activePage : string}) {
     >
       <Container maxW="6xl" py={3}>
         <Flex align="center" justify="space-between" gap={4}>
-          {/* Left: Brand + Logo Slot */}
           <HStack gap={3} minW="fit-content">
             <Box
               w="44px"
@@ -92,7 +83,7 @@ export function TopNav(props: {activePage : string}) {
               placeItems="center"
               fontWeight={900}
               color={tc}
-              bg = "brand.400"
+              bg="brand.400"
               letterSpacing="0.5px"
               flexShrink={0}
             >
@@ -109,13 +100,7 @@ export function TopNav(props: {activePage : string}) {
             </Box>
           </HStack>
 
-          {/* Center: Links (spread out) */}
-          <HStack
-            gap={2}
-            flex={1}
-            justify="center"
-            display={{ base: "none", md: "flex" }}
-          >
+          <HStack gap={2} flex={1} justify="center" display={{ base: "none", md: "flex" }}>
             {navItems.map((navItem) => (
               <NavLink
                 key={navItem.href}
@@ -126,7 +111,6 @@ export function TopNav(props: {activePage : string}) {
             ))}
           </HStack>
 
-          {/* Right: Actions */}
           <HStack gap={2} minW="fit-content">
             <Button
               variant="outline"
@@ -137,27 +121,24 @@ export function TopNav(props: {activePage : string}) {
               size="sm"
               onClick={() => console.log("sync")}
               color={btnt}
-              bg = {btnc}
+              bg={btnc}
             >
               Sync
             </Button>
 
             <Button
               color={btnt}
-              bg = {btnc}
+              bg={btnc}
               _hover={{ bg: "brand.600" }}
               borderRadius="md"
               size="sm"
               fontWeight={900}
-              as="a"
-              reference-path="/logout"
             >
-              Log out
+              <a href="/logout">Log out</a>
             </Button>
           </HStack>
         </Flex>
 
-        {/* Mobile nav row (shows under header on small screens) */}
         <Box display={{ base: "block", md: "none" }} mt={3}>
           <HStack gap={2} overflowX="auto" pb={2}>
             {navItems.map((navItem) => (
@@ -172,22 +153,14 @@ export function TopNav(props: {activePage : string}) {
         </Box>
       </Container>
     </Box>
-
-
   );
 }
 
 export default function Layout({ activePage, children }: LayoutProps) {
   return (
     <div className="layoutRoot">
-      {/* Sidebar */}
-      
-      {TopNav({activePage})}
-
-      {/* Main content */}
-      <section className="mainContent">
-        {children}
-      </section>
+      <TopNav activePage={activePage} />
+      <section className="mainContent">{children}</section>
     </div>
   );
 }
