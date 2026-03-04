@@ -8,6 +8,8 @@ export type ActivePageKey =
   | "budgets"
   | "transactions"
   | "analytics"
+  | "login"
+  | "register"
   | "account";
 
 type LayoutProps = {
