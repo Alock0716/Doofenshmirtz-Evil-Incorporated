@@ -14,7 +14,7 @@
 // When this will be used: Base URL for all API requests in production builds.
 const apiBaseUrlValue =
   (import.meta as any)?.env?.VITE_API_BASE_URL?.trim?.() ||
-  "http://deiapi-env.eba-byrpiycu.us-east-2.elasticbeanstalk.com";
+  "https://deiapi-env.eba-byrpiycu.us-east-2.elasticbeanstalk.com";
 
 /**
  * When this will be used: Retrieves the current auth token from storage.
