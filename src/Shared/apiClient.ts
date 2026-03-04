@@ -3,8 +3,6 @@
 
 // NOTE: keep this centralized so pages can call your backend regardless of where the frontend is hosted.
 const apiBaseUrl =  import.meta.env.VITE_API_BASE_URL;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const apiBaseUrlAlt = "http://localhost:5000";  
 
 function getAuthHeader() {
   // Authentication check

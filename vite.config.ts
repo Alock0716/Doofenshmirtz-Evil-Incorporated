@@ -11,7 +11,7 @@ export default defineConfig({
         dashboard: resolve(__dirname, "Dashboard.html"),
         budgets: resolve(__dirname, "Budgets.html"),
         analytics: resolve(__dirname, "Analytics.html"),
-        accounts: resolve(__dirname, "Accounts.html"),
+        accounts: resolve(__dirname, "Account.html"),
         transactions: resolve(__dirname, "Transactions.html"),
       },
     },
