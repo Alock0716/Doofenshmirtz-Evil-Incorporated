@@ -12,7 +12,7 @@ import { requireAuth } from "./authMiddleware.js";
 dotenv.config();
 
 const app = express();
-const portValue = Number(process.env.PORT || 5000);
+const portValue = Number(process.env.PORT || 8080);
 
 app.use(express.json());
 app.use(
@@ -1418,4 +1418,6 @@ app.delete("/api/v1/budgets/:budgetId", requireAuth, async (req, res) => {
 });
 
 //Localhosting call
-app.listen(portValue, () => console.log(`✅ API on http://localhost:${portValue}`));
+app.listen(portValue, "0.0.0.0", () => {
+  console.log(`Server running on port ${portValue}`);
+});

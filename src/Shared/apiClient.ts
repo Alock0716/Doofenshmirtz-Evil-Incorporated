@@ -6,19 +6,23 @@ const apiBaseUrl =  "https://DEIncAPIServer-env.eba-x7wwwg3h.us-east-2.elasticbe
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const apiBaseUrlAlt = "http://localhost:5000";
 
-function getAuthHeader() {
+function getAuthHeader(): Record<string, string> {
   // Authentication check
   const tokenValue = localStorage.getItem("authToken") || "";
+
+  // Only set the header when token exists
   return tokenValue ? { Authorization: `Bearer ${tokenValue}` } : {};
 }
 
 function buildHeaders(extraHeadersValue: Record<string, string> = {}): HeadersInit {
   // Forwards auth token
-  return {
+  const headersValue: Record<string, string> = {
     "Content-Type": "application/json",
     ...getAuthHeader(),
     ...extraHeadersValue,
   };
+
+  return headersValue;
 }
 
 async function parseJsonSafe(resValue: Response): Promise<any> {
