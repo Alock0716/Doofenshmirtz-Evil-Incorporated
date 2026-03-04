@@ -1,7 +1,7 @@
 //How the Dashboard is initialized from Dashboard.html
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "../../Styles/dashboard.css";
+import "../../Styles/Dashboard.css";
 import Dashboard from "./Dashboard";
 import {system} from "../../Styles/theme"
 import { ChakraProvider } from "@chakra-ui/react";
