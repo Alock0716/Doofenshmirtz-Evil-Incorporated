@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-empty-object-type */
+/* eslint-disable react-refresh/only-export-components */
 "use client"
 
 import type { BoxProps, StackProps, SystemStyleObject } from "@chakra-ui/react"
@@ -272,6 +274,6 @@ export {
   createBooleanControl,
   createSelectControl,
   createSwatchControl,
-} from "compositions/ui/rich-text-editor-control"
+} from "./rich-text-editor-control"
 
-export { useRichTextEditorContext } from "compositions/ui/rich-text-editor-context"
+export { useRichTextEditorContext } from "./rich-text-editor-context"
