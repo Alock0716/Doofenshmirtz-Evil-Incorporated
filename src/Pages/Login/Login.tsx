@@ -2,7 +2,7 @@ import Layout from "../../Shared/Layout";
 
 export default function Login() {
   return (
-    <Layout activePage="pageKey">
+    <Layout activePage="login">
       <header className="pageHeader">
         <h1>Page Title</h1>
         <p className="pageSubtitle">Short page description</p>
