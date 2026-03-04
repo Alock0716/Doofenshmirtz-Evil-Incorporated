@@ -2,27 +2,23 @@
 //Need to merge this and other versions carefully as this file will be built out simultaneously
 
 // NOTE: keep this centralized so pages can call your backend regardless of where the frontend is hosted.
-const apiBaseUrl =  "http://apiserverdei-env.eba-qpa83xx2.us-east-2.elasticbeanstalk.com";
+const apiBaseUrl =  "http://deiapi-env.eba-byrpiycu.us-east-2.elasticbeanstalk.com";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const apiBaseUrlAlt = "http://localhost:5000";
+const apiBaseUrlAlt = "http://localhost:5000";  
 
-function getAuthHeader(): Record<string, string> {
+function getAuthHeader() {
   // Authentication check
   const tokenValue = localStorage.getItem("authToken") || "";
-
-  // Only set the header when token exists
   return tokenValue ? { Authorization: `Bearer ${tokenValue}` } : {};
 }
 
 function buildHeaders(extraHeadersValue: Record<string, string> = {}): HeadersInit {
   // Forwards auth token
-  const headersValue: Record<string, string> = {
+  return {
     "Content-Type": "application/json",
     ...getAuthHeader(),
     ...extraHeadersValue,
   };
-
-  return headersValue;
 }
 
 async function parseJsonSafe(resValue: Response): Promise<any> {

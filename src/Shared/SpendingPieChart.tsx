@@ -12,13 +12,12 @@ import { Chart as ChartJs, ArcElement, Tooltip, Legend } from "chart.js";
 import { apiClient } from "./apiClient";
 import type {SpendingByCategoryRow, SpendingPieChartProps} from "./types";
 import { formatMoney, safeText, getAmountToneColor } from "./SharedFunctions";
-import type { InputProps } from "@chakra-ui/react";
 
 //chart js requires registering imports
 ChartJs.register(ArcElement, Tooltip, Legend);
 
 export default function SpendingPieChart({timeFrame, accountIdValue = "all"}: SpendingPieChartProps) {
-  //function that exports the chart component 
+  //function that ecports the chart component 
 
   //these variables store the data by row
   const [dataRows, setDataRows] = useState<SpendingByCategoryRow[]>([]);
