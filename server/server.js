@@ -14,13 +14,37 @@ dotenv.config();
 const app = express();
 const portValue = Number(process.env.PORT || 8080);
 
-app.use(express.json());
+
+/**
+ * Purpose:
+ * - Allow the frontend to call the API from a different origin (localhost / Amplify).
+ * - Ensure OPTIONS preflight gets a successful response with CORS headers.
+ */
+const allowedOriginsValue = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  // add your Amplify domain once deployed (https)
+];
+
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: (originValue, callbackValue) => {
+      // Allow tools like curl/postman (no origin header)
+      if (!originValue) return callbackValue(null, true);
+
+      const isAllowedValue = allowedOriginsValue.includes(originValue);
+      return callbackValue(isAllowedValue ? null : new Error("CORS blocked"), isAllowedValue);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// IMPORTANT: handle preflight for all routes
+app.options("*", cors());
+
+app.use(express.json());
 
 //Route Functions:
 /**

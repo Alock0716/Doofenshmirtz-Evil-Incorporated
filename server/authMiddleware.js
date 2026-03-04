@@ -13,6 +13,7 @@ export function requireAuth(req, res, next) {
     };
     return next();
   }
+  if (req.method === "OPTIONS") return next();
 
   // Normal JWT Logic
   try {

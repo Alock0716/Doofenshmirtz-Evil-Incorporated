@@ -2,7 +2,7 @@
 //Need to merge this and other versions carefully as this file will be built out simultaneously
 
 // NOTE: keep this centralized so pages can call your backend regardless of where the frontend is hosted.
-const apiBaseUrl =  "https://DEIncAPIServer-env.eba-x7wwwg3h.us-east-2.elasticbeanstalk.com";
+const apiBaseUrl =  "http://apiserverdei-env.eba-qpa83xx2.us-east-2.elasticbeanstalk.com";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const apiBaseUrlAlt = "http://localhost:5000";
 
