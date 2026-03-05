@@ -55,11 +55,11 @@ export function TopNav(props: { activePage: ActivePageKey }) {
   const { activePage } = props;
 
   const navItems: NavItem[] = [
-    { label: "Dashboard", href: "/dashboard", isActive: activePage === "dashboard" },
-    { label: "Budgets", href: "/budgets", isActive: activePage === "budgets" },
-    { label: "Transactions", href: "/transactions", isActive: activePage === "transactions" },
-    { label: "Analytics", href: "/analytics", isActive: activePage === "analytics" },
-    { label: "Account", href: "/account", isActive: activePage === "account" }, // ✅ singular
+    { label: "Dashboard", href: "/dashboard.html", isActive: activePage === "dashboard" },
+    { label: "Budgets", href: "/budgets.html", isActive: activePage === "budgets" },
+    { label: "Transactions", href: "/transactions.html", isActive: activePage === "transactions" },
+    { label: "Analytics", href: "/analytics.html", isActive: activePage === "analytics" },
+    { label: "Account", href: "/account.html", isActive: activePage === "account" }, // ✅ singular
   ];
 
   return (
